@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>TSE Check In Scanner</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    background: linear-gradient(135deg, #0B5FCB 0%, #1E6FE5 100%);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 24px 16px;
+    color: #fff;
+  }
+
+  .logo {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    color: #FFD6E0;
+    text-align: center;
+    margin-bottom: 6px;
+  }
+
+  h1 {
+    font-size: 20px;
+    font-weight: 700;
+    text-align: center;
+    margin-bottom: 24px;
+  }
+
+  .scanner-box {
+    width: 100%;
+    max-width: 360px;
+    background: rgba(255,255,255,0.1);
+    border-radius: 16px;
+    overflow: hidden;
+    padding: 16px;
+    margin-bottom: 20px;
+  }
+
+  #reader {
+    width: 100%;
+    border-radius: 10px;
+    overflow: hidden;
+  }
+
+  #reader__dashboard_section_csr span,
+  #reader__dashboard_section_fsr,
+  #reader__filescan_input { display: none !important; }
+  #reader__scan_region { border-radius: 10px; overflow: hidden; }
+
+  .result-box {
+    width: 100%;
+    max-width: 360px;
+    border-radius: 16px;
+    padding: 20px;
+    text-align: center;
+    display: none;
+    margin-bottom: 16px;
+  }
+
+  .result-box.success { background: #22c55e; display: block; }
+  .result-box.error   { background: #ef4444; display: block; }
+  .result-box.warning { background: #f59e0b; display: block; }
+  .result-box.loading { background: rgba(255,255,255,0.15); display: block; }
+
+  .result-icon   { font-size: 40px; margin-bottom: 10px; }
+  .result-status { font-size: 18px; font-weight: 700; margin-bottom: 6px; }
+  .result-name   { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+  .result-time   { font-size: 13px; opacity: 0.85; }
+
+  .btn-scan-again {
+    display: none;
+    background: #ffffff;
+    color: #0B5FCB;
+    border: none;
+    border-radius: 10px;
+    padding: 14px 32px;
+    font-size: 16px;
+    font-weight: 700;
+    cursor: pointer;
+    width: 100%;
+    max-width: 360px;
+  }
+
+  .btn-scan-again:active { opacity: 0.8; }
+
+  .footer {
+    margin-top: auto;
+    padding-top: 24px;
+    font-size: 11px;
+    opacity: 0.5;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<div class="logo">TSE GRADUATION CEREMONY 2026</div>
+<h1>🎓 Check In Scanner</h1>
+
+<div class="scanner-box" id="scannerBox">
+  <div id="reader"></div>
+</div>
+
+<div class="result-box" id="resultBox">
+  <div class="result-icon" id="resultIcon"></div>
+  <div class="result-status" id="resultStatus"></div>
+  <div class="result-name" id="resultName"></div>
+  <div class="result-time" id="resultTime"></div>
+</div>
+
+<button class="btn-scan-again" id="btnScanAgain" onclick="scanAgain()">
+  Quét tiếp
+</button>
+
+<div class="footer">Chỉ dành cho nhân sự TSE</div>
+
+<script>
+  // Cloudflare Worker URL (proxy cho Apps Script)
+  const WEB_APP_URL = 'https://tse-checkin.tesol-tse.workers.dev';
+
+  let scanner = null;
+  let isProcessing = false;
+
+  function startScanner() {
+    scanner = new Html5Qrcode('reader');
+    scanner.start(
+      { facingMode: 'environment' },
+      { fps: 10, qrbox: { width: 250, height: 250 } },
+      onScanSuccess,
+      () => {}
+    ).catch(() => {
+      document.getElementById('scannerBox').innerHTML =
+        '<p style="text-align:center;padding:20px;opacity:0.8;">Không thể truy cập camera.<br>Vui lòng cho phép quyền camera và thử lại.</p>';
+    });
+  }
+
+  function onScanSuccess(uid) {
+    if (isProcessing) return;
+    isProcessing = true;
+
+    if (scanner) scanner.pause();
+
+    // Hiện loading
+    document.getElementById('scannerBox').style.display = 'none';
+    const box = document.getElementById('resultBox');
+    box.className = 'result-box loading';
+    document.getElementById('resultIcon').textContent = '⏳';
+    document.getElementById('resultStatus').textContent = 'Đang xử lý...';
+    document.getElementById('resultName').textContent = '';
+    document.getElementById('resultTime').textContent = '';
+    document.getElementById('btnScanAgain').style.display = 'none';
+
+    // Gọi Cloudflare Worker (đã có CORS header)
+    fetch(WEB_APP_URL + '?uid=' + encodeURIComponent(uid))
+      .then(res => res.json())
+      .then(data => showResult(data))
+      .catch(() => showResult({ success: false, message: 'Lỗi kết nối. Thử lại.' }));
+  }
+
+  function showResult(data) {
+    const box = document.getElementById('resultBox');
+    const btn = document.getElementById('btnScanAgain');
+
+    if (data.success) {
+      box.className = 'result-box success';
+      document.getElementById('resultIcon').textContent = '✅';
+      document.getElementById('resultStatus').textContent = 'Check in thành công!';
+      document.getElementById('resultName').textContent = data.name || '';
+      document.getElementById('resultTime').textContent = data.time || '';
+    } else if (data.alreadyCheckedIn) {
+      box.className = 'result-box warning';
+      document.getElementById('resultIcon').textContent = '⚠️';
+      document.getElementById('resultStatus').textContent = 'Đã check in trước đó';
+      document.getElementById('resultName').textContent = data.name || '';
+      document.getElementById('resultTime').textContent = '';
+    } else {
+      box.className = 'result-box error';
+      document.getElementById('resultIcon').textContent = '❌';
+      document.getElementById('resultStatus').textContent = data.message || 'Lỗi không xác định';
+      document.getElementById('resultName').textContent = '';
+      document.getElementById('resultTime').textContent = '';
+    }
+
+    btn.style.display = 'block';
+  }
+
+  function scanAgain() {
+    isProcessing = false;
+    document.getElementById('resultBox').className = 'result-box';
+    document.getElementById('btnScanAgain').style.display = 'none';
+    document.getElementById('scannerBox').style.display = 'block';
+
+    if (scanner) {
+      scanner.resume();
+    } else {
+      startScanner();
+    }
+  }
+
+  startScanner();
+</script>
+
+</body>
+</html>
