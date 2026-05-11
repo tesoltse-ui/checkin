@@ -158,20 +158,35 @@
     document.getElementById('resultName').textContent = '';
     document.getElementById('resultTime').textContent = '';
 
-    // Gọi Apps Script API qua no-cors fetch
     const url = WEB_APP_URL + '?page=checkin&uid=' + encodeURIComponent(uid);
 
-    fetch(url, { redirect: 'follow' })
-      .then(res => res.json())
-      .then(data => showResult(data))
-      .catch(() => {
-        // Fallback: dùng fetch no-cors nếu CORS lỗi
-        fetch(url, { mode: 'no-cors', redirect: 'follow' })
-          .then(() => {
-            showResult({ success: true, message: 'Check in thành công.', name: '', time: '' });
-          })
-          .catch(() => showResult({ success: false, message: 'Lỗi kết nối. Thử lại.' }));
-      });
+    fetch(url, {
+      method: 'GET',
+      redirect: 'follow'
+    })
+    .then(res => res.text())
+    .then(text => {
+      // HtmlService wrap JSON trong HTML, cần extract phần JSON
+      // Thử parse trực tiếp trước
+      try {
+        const data = JSON.parse(text);
+        showResult(data);
+        return;
+      } catch {}
+      // Nếu không được thì extract từ HTML body
+      const match = text.match(/\{[\s\S]*\}/);
+      if (match) {
+        try {
+          const data = JSON.parse(match[0]);
+          showResult(data);
+          return;
+        } catch {}
+      }
+      showResult({ success: false, message: 'Lỗi phản hồi từ server.' });
+    })
+    .catch(err => {
+      showResult({ success: false, message: 'Lỗi kết nối. Thử lại.' });
+    });
   }
 
   function showResult(data) {
